@@ -1,56 +1,19 @@
 # threejs-scroll-animation — Examples
 
-Scroll-driven Three.js (r160) animation. No build step: open the `.html` file in a modern browser and scroll.
+Scroll-driven, **production-grade** Three.js (r160) animation. No build step: open the `.html` file in a modern browser and scroll.
 
 | Example | Description |
 | --- | --- |
 | [`scroll-scene.html`](./scroll-scene.html) | A scroll-scrubbed 3D scene: normalized scroll position (0→1) drives camera dolly, object rotation, and a color/background shift on a single deterministic timeline. The canvas is pinned with `position: sticky`. Not autoplay — the scene only moves when you scroll. |
 
-Includes a `prefers-reduced-motion` fallback that shows a single static frame with no scroll coupling. Handles resize.
+### Expert / production features (every example)
+
+- **Capability detection + graceful fallback** — probes WebGL2 → WebGL → none. With no WebGL context it paints a tasteful CSS gradient poster instead of a blank canvas; low-power devices start at reduced quality.
+- **Adaptive performance** — DPR capped at 2; rendering is scroll-driven and coalesced through `requestAnimationFrame`, never an idle loop. A rolling FPS average steps DPR and the depth-field point count down below 50 fps and back up above 58 fps with hysteresis, and work is skipped while the sticky stage is offscreen (`IntersectionObserver`) or the tab is hidden.
+- **Strict cleanup** — one teardown on `pagehide` removes scroll/resize listeners and disposes all geometries, materials and the renderer.
+- **Accessibility** — the canvas is `role="img"` with an `aria-label`; captions are real page text; `prefers-reduced-motion` renders one representative static frame with **no** scroll coupling.
+- **Premium look** — ACES Filmic tone mapping, key + rose rim lighting, and a cobalt→rose color/fog shift across the timeline.
+
+Three.js r160 is loaded as ES modules through an importmap on **jsDelivr only** (`three` + `three/addons/`).
 
 Explore more on the hub: **https://aetumi.app** · scroll experiences → https://aetumi.app/etec
-
----
-
-## Example backlog / roadmap
-
-# Three.js Scroll Animation Example Backlog
-
-## Planned examples
-
-### Pinned camera story
-
-Map semantic HTML chapters to deterministic camera positions while a Three.js canvas remains pinned.
-
-### Product exploded view
-
-Drive part separation from normalized scroll progress and provide a reduced-motion fallback.
-
-### Scroll-linked material transition
-
-Blend material properties or lighting states without performing heavy work inside the scroll handler.
-
-### Mobile fallback
-
-Show how the same narrative can remain useful when the full pinned 3D experience is disabled on smaller or constrained devices.
-
-### Performance instrumentation
-
-Document frame time, visibility pausing and asset-loading behavior for a scroll-driven scene.
-
-## Quality bar
-
-Every example should include:
-
-- normalized progress model
-- one render loop
-- resize behavior
-- mobile behavior
-- reduced-motion fallback
-- semantic narrative content outside canvas
-
-## AETumi links
-
-- https://aetumi.app/3d-scroll/
-- https://aetumi.app/threejs/
-- https://aetumi.app/interactive-websites/
