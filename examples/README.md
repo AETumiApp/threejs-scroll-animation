@@ -1,3 +1,19 @@
+# threejs-scroll-animation — Examples
+
+Scroll-driven Three.js (r160) animation. No build step: open the `.html` file in a modern browser and scroll.
+
+| Example | Description |
+| --- | --- |
+| [`scroll-scene.html`](./scroll-scene.html) | A scroll-scrubbed 3D scene: normalized scroll position (0→1) drives camera dolly, object rotation, and a color/background shift on a single deterministic timeline. The canvas is pinned with `position: sticky`. Not autoplay — the scene only moves when you scroll. |
+
+Includes a `prefers-reduced-motion` fallback that shows a single static frame with no scroll coupling. Handles resize.
+
+Explore more on the hub: **https://aetumi.app** · scroll experiences → https://aetumi.app/etec
+
+---
+
+## Example backlog / roadmap
+
 # Three.js Scroll Animation Example Backlog
 
 ## Planned examples
