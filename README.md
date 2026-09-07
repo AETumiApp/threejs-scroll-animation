@@ -84,10 +84,9 @@ The 3D layer remains pinned while semantic HTML chapters move over or beside it.
 
 ## Repository status
 
-Documentation-first. Planned examples emphasize scroll state, camera choreography, reduced-motion behavior and mobile reliability.
+Active. Runnable, production-oriented examples now live in [`examples/`](./examples/) — reviewed for performance (adaptive quality), accessibility, reduced-motion and non-WebGL fallbacks, and clean resource disposal. The set is refined and extended as new patterns land.
 
 See [examples/README.md](./examples/README.md).
-
 ## About AETumi
 
 AETumi helps designers, developers and agencies create cinematic 3D web experiences with Three.js, WebGL, Next.js, React, React Three Fiber, MCP and AI coding assistants.
