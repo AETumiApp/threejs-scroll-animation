@@ -5,41 +5,44 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Scroll-Driven 3D Scene — AETumi</title>
 <!--
-  Scroll-driven 3D (scrub, NOT autoplay).
-  The page is tall and scrollable; a single normalized scroll value
-  p = 0..1 drives everything:
-     - camera dolly (moves in along Z)
-     - object rotation
-     - a color shift (hue interpolation)
-     - background/fog tint
-  The canvas is pinned with position:sticky so the 3D stays fixed while
-  the document scrolls behind it.
+  SCROLL-DRIVEN 3D SCENE — expert / production build.
 
-  REDUCED MOTION: when the user prefers reduced motion we do NOT tie the
-  scene to scroll. We render one representative static frame (p = 0.5) and
-  leave it — the content below is still fully readable.
+  Deterministic SCRUB (not autoplay): a single normalized scroll value p = 0..1
+  drives the whole timeline — camera dolly, rotation, color and fog tint. The
+  canvas is pinned with position:sticky so the 3D stays fixed while the document
+  scrolls behind it.
 
-  Three.js r160 (UMD global build from cdnjs).
+  Production concerns handled below:
+    • WebGL2 → WebGL → tasteful static poster fallback (never a blank canvas).
+    • prefers-reduced-motion: renders ONE representative frame, no scroll coupling.
+    • Adaptive quality: rolling FPS steps DPR + star count down <50 fps, up >58.
+    • Rendering is scroll-driven and coalesced through rAF; the scene never spins
+      an idle loop. Work is skipped while the stage is offscreen or tab hidden.
+    • Strict dispose(): scroll/resize listeners, geometries, materials, renderer.
+    • Accessibility: canvas role="img" + aria-label; captions are real text.
+
+  Three.js r160 — ES modules via importmap on jsDelivr ONLY.
 -->
 <style>
+  :root { color-scheme: dark; }
   html, body { margin: 0; background: #05070d; color: #eef1f8;
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  /* The scroll track defines how much scrolling maps to p = 0..1. */
-  #track { height: 400vh; position: relative; }
-  /* Sticky canvas stage: stays put while #track scrolls. */
+  #track { height: 400vh; position: relative; }          /* scroll distance = timeline */
   #stage { position: sticky; top: 0; height: 100vh; overflow: hidden; }
   canvas { display: block; }
 
-  .caption { position: absolute; left: 0; right: 0; text-align: center;
-    pointer-events: none; padding: 0 6vw; }
-  .caption h2 { margin: 0; font-size: clamp(1.6rem, 5vw, 3.4rem);
-    letter-spacing: -0.02em; text-wrap: balance; }
+  .poster { position: absolute; inset: 0;
+    background: radial-gradient(80% 80% at 50% 50%, #241033 0%, #0c0a1a 55%, #05070d 100%); }
+  .poster::after { content: ""; position: absolute; left: 50%; top: 50%; width: 40vmin; height: 40vmin;
+    transform: translate(-50%,-50%); border-radius: 42% 58% 55% 45% / 55% 45% 55% 45%;
+    background: conic-gradient(from 210deg, #4f6cff, #ff5ea8, #4f6cff); filter: blur(4px); opacity: .75; }
+
+  .caption { position: absolute; left: 0; right: 0; text-align: center; pointer-events: none; padding: 0 6vw; }
+  .caption h2 { margin: 0; font-size: clamp(1.6rem, 5vw, 3.4rem); letter-spacing: -0.02em; text-wrap: balance; }
   .caption p  { margin: .6rem 0 0; color: #9aa3c4; }
   #c1 { top: 12vh; }  #c2 { top: 12vh; }  #c3 { bottom: 12vh; }
-  .progress { position: fixed; top: 0; left: 0; height: 3px; background: #7c8bff;
-    width: 0%; z-index: 5; }
-  .rm-note { position: fixed; bottom: 12px; width: 100%; text-align: center;
-    font-size: .78rem; color: #6b73a0; }
+  .progress { position: fixed; top: 0; left: 0; height: 3px; background: #7c8bff; width: 0%; z-index: 5; }
+  .rm-note { position: fixed; bottom: 12px; width: 100%; text-align: center; font-size: .78rem; color: #6b73a0; }
 </style>
 </head>
 <body>
@@ -57,120 +60,202 @@
   <script type="module">
 import * as THREE from 'three';
 
-    const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const stage = document.getElementById('stage');
-    const track = document.getElementById('track');
+const stage = document.getElementById('stage');
+const track = document.getElementById('track');
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    // ---- Renderer / scene / camera -----------------------------------------
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    renderer.setSize(innerWidth, innerHeight);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    stage.appendChild(renderer.domElement);
+function detectWebGL() {
+  try {
+    const c = document.createElement('canvas');
+    if (c.getContext('webgl2')) return 'webgl2';
+    if (c.getContext('webgl') || c.getContext('experimental-webgl')) return 'webgl';
+  } catch (_) {}
+  return 'none';
+}
+const tier = detectWebGL();
+const lowPower = (navigator.hardwareConcurrency || 8) <= 4 ||
+                 (navigator.deviceMemory || 8) <= 4;
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x05070d);
-    scene.fog = new THREE.Fog(0x05070d, 4, 16);
+if (tier === 'none') {
+  const poster = document.createElement('div');
+  poster.className = 'poster';
+  poster.setAttribute('role', 'img');
+  poster.setAttribute('aria-label', 'A scroll-driven 3D knot scene (static preview — WebGL unavailable)');
+  stage.appendChild(poster);
+} else {
+  boot();
+}
 
-    const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100);
-    camera.position.set(0, 0, 9);
+function boot() {
+  /* ---- Renderer / scene / camera ------------------------------------- */
+  const renderer = new THREE.WebGLRenderer({ antialias: !lowPower, powerPreference: 'high-performance' });
+  const maxDPR = Math.min(devicePixelRatio || 1, 2);
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+  stage.appendChild(renderer.domElement);
 
-    // ---- Object -------------------------------------------------------------
-    const geo = new THREE.TorusKnotGeometry(1.3, 0.42, 240, 40);
-    const material = new THREE.MeshStandardMaterial({ roughness: 0.28, metalness: 0.55 });
-    const knot = new THREE.Mesh(geo, material);
-    scene.add(knot);
+  const canvas = renderer.domElement;
+  canvas.setAttribute('role', 'img');
+  canvas.setAttribute('aria-label',
+    'A metallic knot that rotates and shifts from cobalt to rose as you scroll, camera dollying inward — AETumi scroll scene.');
 
-    // Field of small points for a sense of depth/parallax while dollying.
-    const starGeo = new THREE.BufferGeometry();
-    const N = 600, arr = new Float32Array(N * 3);
-    for (let i = 0; i < N; i++) {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05070d);
+  scene.fog = new THREE.Fog(0x05070d, 4, 16);
+
+  const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100);
+  camera.position.set(0, 0, 9);
+
+  /* ---- Hero object --------------------------------------------------- */
+  const geo = new THREE.TorusKnotGeometry(1.3, 0.42, lowPower ? 160 : 240, 40);
+  const material = new THREE.MeshStandardMaterial({ roughness: 0.28, metalness: 0.55 });
+  const knot = new THREE.Mesh(geo, material);
+  scene.add(knot);
+
+  /* ---- Depth field of points (count is quality-driven) --------------- */
+  let starGeo, stars;
+  const starMat = new THREE.PointsMaterial({ color: 0x8ea2ff, size: 0.05, transparent: true, opacity: 0.7 });
+  function buildStars(count) {
+    if (starGeo) { scene.remove(stars); starGeo.dispose(); }
+    starGeo = new THREE.BufferGeometry();
+    const arr = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
       arr[i*3]   = (Math.random() - 0.5) * 24;
       arr[i*3+1] = (Math.random() - 0.5) * 24;
       arr[i*3+2] = (Math.random() - 0.5) * 24 - 4;
     }
     starGeo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
-    const stars = new THREE.Points(starGeo,
-      new THREE.PointsMaterial({ color: 0x8ea2ff, size: 0.05, transparent: true, opacity: 0.7 }));
+    stars = new THREE.Points(starGeo, starMat);
     scene.add(stars);
+  }
+  let starCount = lowPower ? 300 : 600;
+  buildStars(starCount);
 
-    // ---- Lights -------------------------------------------------------------
-    scene.add(new THREE.AmbientLight(0x33406a, 1.0));
-    const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(3, 4, 5);
-    const rim = new THREE.DirectionalLight(0xff6ab0, 1.0); rim.position.set(-4, -2, -3);
-    scene.add(key, rim);
+  /* ---- Lights -------------------------------------------------------- */
+  scene.add(new THREE.AmbientLight(0x33406a, 1.0));
+  const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(3, 4, 5);
+  const rim = new THREE.DirectionalLight(0xff6ab0, 1.0); rim.position.set(-4, -2, -3);
+  scene.add(key, rim);
 
-    // ---- The single scrub function: p in [0,1] -> full scene state ---------
-    const colA = new THREE.Color(0x4f6cff);  // start hue
-    const colB = new THREE.Color(0xff5ea8);  // end hue
-    const bgA  = new THREE.Color(0x05070d);
-    const bgB  = new THREE.Color(0x140a1e);
-    const tmp = new THREE.Color();
+  /* ---- The single scrub function: p in [0,1] -> full scene state ----- */
+  const colA = new THREE.Color(0x4f6cff), colB = new THREE.Color(0xff5ea8);
+  const bgA  = new THREE.Color(0x05070d), bgB  = new THREE.Color(0x140a1e);
+  const tmp = new THREE.Color();
+  const c1 = document.getElementById('c1'), c2 = document.getElementById('c2'),
+        c3 = document.getElementById('c3'), bar = document.getElementById('bar');
+  function applyScroll(p) {
+    p = Math.min(1, Math.max(0, p));
+    camera.position.z = 9 - p * 5.6;
+    camera.position.y = Math.sin(p * Math.PI) * 0.6;
+    camera.lookAt(0, 0, 0);
+    knot.rotation.y = p * Math.PI * 2.2;
+    knot.rotation.x = p * Math.PI * 0.8;
+    stars.rotation.y = p * 0.6;
+    material.color.copy(tmp.copy(colA).lerp(colB, p));
+    material.emissive.copy(tmp.copy(colA).lerp(colB, p)).multiplyScalar(0.18);
+    scene.background.copy(tmp.copy(bgA).lerp(bgB, p));
+    scene.fog.color.copy(scene.background);
+    c2.style.opacity = String(Math.max(0, 1 - Math.abs(p - 0.5) * 4));
+    c1.style.opacity = String(Math.max(0, 1 - p * 4));
+    c3.style.opacity = String(Math.max(0, (p - 0.72) * 4));
+    bar.style.width = (p * 100).toFixed(1) + '%';
+  }
+  function scrollProgress() {
+    const total = track.offsetHeight - innerHeight;
+    return total > 0 ? scrollY / total : 0;
+  }
 
-    function applyScroll(p) {
-      p = Math.min(1, Math.max(0, p));
-      // Camera dolly: 9 -> 3.4 units back as we scroll.
-      camera.position.z = 9 - p * 5.6;
-      camera.position.y = Math.sin(p * Math.PI) * 0.6;
-      camera.lookAt(0, 0, 0);
-      // Object rotation tied directly to scroll (deterministic scrub).
-      knot.rotation.y = p * Math.PI * 2.2;
-      knot.rotation.x = p * Math.PI * 0.8;
-      stars.rotation.y = p * 0.6;
-      // Color + background shift.
-      material.color.copy(tmp.copy(colA).lerp(colB, p));
-      material.emissive.copy(tmp.copy(colA).lerp(colB, p)).multiplyScalar(0.18);
-      scene.background.copy(tmp.copy(bgA).lerp(bgB, p));
-      scene.fog.color.copy(scene.background);
-      // Caption crossfades across the three thirds of the timeline.
-      c2.style.opacity = String(Math.max(0, 1 - Math.abs(p - 0.5) * 4));
-      c1.style.opacity = String(Math.max(0, 1 - p * 4));
-      c3.style.opacity = String(Math.max(0, (p - 0.72) * 4));
-      bar.style.width = (p * 100).toFixed(1) + '%';
-    }
-    const c1 = document.getElementById('c1'), c2 = document.getElementById('c2'),
-          c3 = document.getElementById('c3'), bar = document.getElementById('bar');
+  /* ---- Adaptive quality (measured across scroll frames) -------------- */
+  let quality = lowPower ? 0.6 : 1.0;
+  const fpsBuf = []; let lastAdjust = 0;
+  function applyQuality() {
+    renderer.setPixelRatio(maxDPR * (0.55 + 0.45 * quality));
+    const wantStars = quality > 0.85 ? (lowPower ? 400 : 600) : quality > 0.65 ? 400 : 240;
+    if (wantStars !== starCount) { starCount = wantStars; buildStars(starCount); }
+  }
+  applyQuality();
+  function sampleAndAdapt(dt, now) {
+    if (dt > 0 && dt < 500) fpsBuf.push(1000 / dt);   // ignore long idle gaps
+    if (fpsBuf.length > 60) fpsBuf.shift();
+    if (fpsBuf.length < 30 || now - lastAdjust < 1500) return;
+    const avg = fpsBuf.reduce((a, b) => a + b, 0) / fpsBuf.length;
+    if (avg < 50 && quality > 0.5) { quality = Math.max(0.5, quality - 0.15); applyQuality(); lastAdjust = now; fpsBuf.length = 0; }
+    else if (avg > 58 && quality < 1) { quality = Math.min(1, quality + 0.1); applyQuality(); lastAdjust = now; fpsBuf.length = 0; }
+  }
 
-    // ---- Scroll -> p --------------------------------------------------------
-    function scrollProgress() {
-      const total = track.offsetHeight - innerHeight;   // scrollable distance
-      return total > 0 ? window.scrollY / total : 0;
-    }
-
-    // ---- Render strategy ----------------------------------------------------
-    if (reduceMotion) {
-      // Static, representative frame. No scroll coupling, no rAF churn.
-      applyScroll(0.5);
-      renderer.render(scene, camera);
-      const note = document.createElement('div');
-      note.className = 'rm-note';
-      note.textContent = 'Reduced-motion: showing a static frame.';
-      document.body.appendChild(note);
-    } else {
-      // Drive rendering from scroll; rAF only coalesces rapid scroll events.
-      let queued = false;
-      function onScroll() {
-        if (queued) return;
-        queued = true;
-        requestAnimationFrame(() => {
-          applyScroll(scrollProgress());
-          renderer.render(scene, camera);
-          queued = false;
-        });
-      }
-      addEventListener('scroll', onScroll, { passive: true });
+  /* ---- Reduced motion: one static frame, no scroll coupling ---------- */
+  if (reduceMotion) {
+    applyScroll(0.5);
+    renderer.render(scene, camera);
+    const note = document.createElement('div');
+    note.className = 'rm-note';
+    note.textContent = 'Reduced-motion: showing a static frame.';
+    document.body.appendChild(note);
+  } else {
+    /* ---- Scroll-driven render (rAF-coalesced, visibility-gated) ------ */
+    let queued = false, visible = true, prevT = performance.now();
+    function draw() {
+      queued = false;
+      if (!visible || document.hidden) return;
+      const now = performance.now();
+      const dt = now - prevT; prevT = now;
       applyScroll(scrollProgress());
       renderer.render(scene, camera);
+      sampleAndAdapt(dt, now);
     }
+    function schedule() { if (!queued) { queued = true; requestAnimationFrame(draw); } }
+    const onScroll = () => schedule();
+    addEventListener('scroll', onScroll, { passive: true });
 
-    // ---- Resize -------------------------------------------------------------
-    addEventListener('resize', () => {
+    // Only redraw while the sticky stage is actually on screen.
+    const io = new IntersectionObserver((es) => {
+      visible = es[0].isIntersecting;
+      if (visible) schedule();
+    }, { threshold: 0.01 });
+    io.observe(stage);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && visible) schedule(); });
+
+    applyScroll(scrollProgress());
+    renderer.render(scene, camera);
+
+    /* ---- Resize ----------------------------------------------------- */
+    const onResize = () => {
       camera.aspect = innerWidth / innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
-      applyScroll(reduceMotion ? 0.5 : scrollProgress());
+      applyScroll(scrollProgress());
       renderer.render(scene, camera);
-    });
+    };
+    addEventListener('resize', onResize);
+
+    /* ---- Strict teardown -------------------------------------------- */
+    addEventListener('pagehide', () => {
+      removeEventListener('scroll', onScroll);
+      removeEventListener('resize', onResize);
+      io.disconnect();
+      geo.dispose(); material.dispose(); starGeo.dispose(); starMat.dispose();
+      renderer.dispose(); renderer.domElement.remove();
+    }, { once: true });
+    return;
+  }
+
+  /* ---- Resize (reduced-motion path) --------------------------------- */
+  const onResize = () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+    applyScroll(0.5);
+    renderer.render(scene, camera);
+  };
+  addEventListener('resize', onResize);
+  addEventListener('pagehide', () => {
+    removeEventListener('resize', onResize);
+    geo.dispose(); material.dispose(); starGeo.dispose(); starMat.dispose();
+    renderer.dispose(); renderer.domElement.remove();
+  }, { once: true });
+}
   </script>
 </body>
 </html>
