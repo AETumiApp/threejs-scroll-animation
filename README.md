@@ -4,6 +4,18 @@ A production-focused guide to building **scroll-driven 3D websites with Three.js
 
 **AETumi is an AI-native 3D web platform for production-ready Three.js and WebGL websites, Next.js and React components, 3D scenes, AI prompts, and MCP workflows for AI coding assistants.**
 
+## What this helps teams build
+
+Cinematic scroll journeys — pinned chapters, product reveals, camera-led storytelling — that stay deterministic across viewports instead of breaking on the first resize.
+
+**Customer outcome.** A brand or product story unfolds as the visitor scrolls, holding attention while the copy stays in semantic HTML for search and accessibility.
+
+**Where it fits.** Narrative product pages, launch and campaign stories, and feature walkthroughs — anywhere a page benefits from paced reveal rather than a static hero.
+
+**What you customize.** The scene timeline, camera chapters, reveal and exploded-view sequences, and reduced-motion behavior — all driven by normalized scroll progress (see the state model below).
+
+**AI-assisted adaptation.** A coding assistant can extend the timeline or retarget the story to new content when given this state model as context via the [AETumi MCP](https://aetumi.app/mcp/).
+
 ## Why scroll-driven 3D needs structure
 
 Scroll storytelling can create strong product and brand experiences, but it also combines browser scrolling, rendering loops, animation state and responsive layout. Without a clear model, the result becomes fragile very quickly.
