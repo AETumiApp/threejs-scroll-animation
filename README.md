@@ -114,3 +114,13 @@ Production-ready 3D web you can own the source of — from [AETumi](https://aetu
 - [Three.js website templates & 3D components](https://aetumi.app/threejs/)
 
 Build 3D web directly from your AI assistant with the [AETumi MCP for AI coding](https://aetumi.app/mcp/) — `claude mcp add --transport http aetumi https://mcp.aetumi.app`
+
+## Live demos — AETumi Labs
+
+First-party, interactive references built on this technique — open, orbit and inspect:
+
+- [ATLAS — architectural spatial walkthrough](https://aetumi.app/labs/real-estate/)
+- [AZURE — real-time WebGL ocean & sky hero](https://aetumi.app/labs/travel/)
+
+Browse all: [AETumi Labs](https://aetumi.app/labs/)
+
